@@ -2,11 +2,20 @@
 #include <time.h>
 #include <SDL2/SDL.h>
 
+
 typedef enum {
 	QUIT,
 	RUNNING,
 	PAUSE
 } emu_state_t;
+
+// SDL Container object
+typedef struct {
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    SDL_AudioSpec want, have;
+    SDL_AudioDeviceID dev;
+} sdl_t;
 
 typedef struct {
 	uint32_t windowWidth;	//	Emulator window width
@@ -14,8 +23,11 @@ typedef struct {
 	uint32_t fgColor;		// 	Foreground Color RGBA8888 
 	uint32_t bgColor; 		//	Backgorund Color RGBA8888
 	int32_t scaleFactor;	// 	Amount to scale chip8 pixel 
-	uint32_t instPerSec; 	// CHip8 CPU Clockrate
-	bool pixelOutlines;		// Draw pixel outlines?
+	uint32_t instPerSec; 	// 	Chip8 CPU Clockrate
+	uint32_t sqrWaveFreq;	// 	Freq of square wave sound
+	int16_t volume;			// 	Sound volume
+	uint32_t audSampleRate;	// 	Audio sample rate
+	bool pixelOutlines;		// 	Draw pixel outlines?
 } config_t;
 
 // CHIP8 instruction format
@@ -49,13 +61,14 @@ typedef struct {
 
 } chip8_t;
 
-// setup emulator config from passed in args
-bool set_config_from_args(config_t* config, int argc, char **argv);
 
+bool set_config_from_args(config_t* config, int argc, char **argv);
+bool initSDL(sdl_t *sdl, config_t *config);
 void updateScreen(SDL_Renderer* renderer, const chip8_t *chip8, const config_t *config);
 void handleInput(chip8_t *chip8);
 void emulateInstruction(chip8_t *chip8, const config_t *config);
-void updateTimers(chip8_t *chip8);
+void updateTimers(const SDL_AudioDeviceID dev, chip8_t *chip8);
+void audioCallback(void *userdata, uint8_t *stream, int len);
 void printDebugInfo(chip8_t *chip8);
 
 int main(int argc, char **argv) {
@@ -116,7 +129,7 @@ int main(int argc, char **argv) {
 
 	/*****************************************************************************************************************************/
 	// Set configs
-	config_t config;
+	config_t config = {0};
 	if (!set_config_from_args(&config, argc, argv)) exit(EXIT_FAILURE);
 	if(argc < 2)
 	{
@@ -128,33 +141,18 @@ int main(int argc, char **argv) {
 
 	// Setup SDL
 	/*------------------------------------------------------------------------------------------------*/
-	if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
-		SDL_Log("Unable to initialize SDL: %s\n", SDL_GetError());
-		return 1;
-	}
-	SDL_Window *window = SDL_CreateWindow("Chip-8 by Marcos Espino", 
-											SDL_WINDOWPOS_CENTERED, 
-											SDL_WINDOWPOS_CENTERED, 
-											config.windowWidth * config.scaleFactor, 
-											config.windowHeight * config.scaleFactor, 
-											0);
-											if (!window) {
-	SDL_Log("Could not create window %s\n", SDL_GetError());
-		return 1;
-	}
-	SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-	if (!renderer) {
-		SDL_Log("Could not create renderer %s\n", SDL_GetError());
-		return 1;
-	}
+	sdl_t sdl = {0};
+    if (!initSDL(&sdl, &config)) exit(EXIT_FAILURE);
+
+
 	// Initial screen clear 
 	const uint8_t r = (config.bgColor >> 24) & 0xFF;
 	const uint8_t g = (config.bgColor >> 16) & 0xFF;
 	const uint8_t b = (config.bgColor >> 8) & 0xFF;
 	const uint8_t a = (config.bgColor >> 0) & 0xFF;
 
-	SDL_SetRenderDrawColor(renderer, r,g,b,a);
-	SDL_RenderClear(renderer);
+	SDL_SetRenderDrawColor(sdl.renderer, r,g,b,a);
+	SDL_RenderClear(sdl.renderer);
 	/*------------------------------------------------------------------------------------------------*/
 
 	// Main emulator loop
@@ -179,16 +177,90 @@ int main(int argc, char **argv) {
 		SDL_Delay(16.67f > timeElapsed ? 16.67f - timeElapsed : 0);
 
 		// update window with changes on each iteration
-		updateScreen(renderer, &chip8, &config);
-		updateTimers(&chip8);
+		updateScreen(sdl.renderer, &chip8, &config);
+		updateTimers(sdl.dev, &chip8);
 	}
 
 	// Shut down SDL
-	SDL_DestroyRenderer(renderer);
-	SDL_DestroyWindow(window);
+	SDL_DestroyRenderer(sdl.renderer);
+	SDL_CloseAudioDevice(sdl.dev);
+	SDL_DestroyWindow(sdl.window);
 	SDL_Quit();
 	printf("Success!!\n");
 	return 0;
+}
+
+
+bool set_config_from_args(config_t* config, int argc, char **argv) {
+	// set defaults
+	*config = (config_t){
+		.windowWidth = 64,		// Chip8 original x resolution
+		.windowHeight = 32,		// Chip8 original y resolution
+		.fgColor = 0x00FF00FF,	// GREEN
+		.bgColor = 0x000000FF,	// WHITE
+		.scaleFactor = 20,		// Resolution will be 1280x640
+		.instPerSec = 700,  	// # of instructions to emulate per second
+		.sqrWaveFreq = 440,		// Frequency of sound waves
+		.volume = 3000,			// Volume
+		.audSampleRate = 44100,	// CD Quality
+		.pixelOutlines = true,	// Draw pixel outlines
+	};
+
+	// Overide from passed in args
+	for (int i = 0; i < argc; i++)
+	{
+		(void)argv[i]; // TODO: Get args from commandline
+	}
+	return true; // Success
+}
+
+bool initSDL(sdl_t *sdl, config_t *config) {
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
+        SDL_Log("Could not initialize SDL subsystems! %s\n", SDL_GetError());
+        return false;
+    }
+
+    sdl->window = SDL_CreateWindow("CHIP8 Emulator", SDL_WINDOWPOS_CENTERED, 
+                                   SDL_WINDOWPOS_CENTERED, 
+                                   config->windowWidth * config->scaleFactor, 
+                                   config->windowHeight * config->scaleFactor, 
+                                   0);
+    if (!sdl->window) {
+        SDL_Log("Could not create SDL window %s\n", SDL_GetError());
+        return false;
+    }
+
+    sdl->renderer = SDL_CreateRenderer(sdl->window, -1, SDL_RENDERER_ACCELERATED);
+    if (!sdl->renderer) {
+        SDL_Log("Could not create SDL renderer %s\n", SDL_GetError());
+        return false;
+    }
+
+    // Init Audio stuff
+    sdl->want = (SDL_AudioSpec){
+        .freq = 44100,          // 44100hz "CD" quality
+        .format = AUDIO_S16LSB, // Signed 16 bit little endian
+        .channels = 1,          // Mono, 1 channel
+        .samples = 512,
+        .callback = audioCallback,
+        .userdata = config,        // Userdata passed to audio callback
+    };
+
+    sdl->dev = SDL_OpenAudioDevice(NULL, 0, &sdl->want, &sdl->have, 0);
+
+    if (sdl->dev == 0) {
+        SDL_Log("Could not get an Audio Device %s\n", SDL_GetError());
+        return false;
+    }
+
+    if ((sdl->want.format != sdl->have.format) ||
+        (sdl->want.channels != sdl->have.channels)) {
+
+        SDL_Log("Could not get desired Audio Spec\n");
+        return false;
+    }
+
+    return true;    // Success
 }
 
 
@@ -235,25 +307,20 @@ void updateScreen(SDL_Renderer* renderer, const chip8_t *chip8, const config_t *
 	SDL_RenderPresent(renderer);
 }
 
-bool set_config_from_args(config_t* config, int argc, char **argv) {
-	// set defaults
-	*config = (config_t){
-		.windowWidth = 64,		// Chip8 original x resolution
-		.windowHeight = 32,		// Chip8 original y resolution
-		.fgColor = 0x00FF00FF,	// GREEN
-		.bgColor = 0x000000FF,	// WHITE
-		.scaleFactor = 20,		// Resolution will be 1280x640
-		.instPerSec = 500,  	// # of instructions to emulate per second
-		.pixelOutlines = true,	// Draw pixel outlines?
-	};
 
-	// Overide from passed in args
-	for (int i = 0; i < argc; i++)
-	{
-		(void)argv[i]; // TODO: Get args from commandline
+void audioCallback(void *userdata, uint8_t *stream, int len) {
+	config_t *config = (config_t *)userdata;
+	int16_t *audioData = (int16_t *)stream;
+	static uint32_t runningSampleIndex = 0;
+	const int32_t squareWavePeriod = config->audSampleRate / config->sqrWaveFreq;
+	const int32_t halfSqrWavePeriod = squareWavePeriod / 2;
+
+	for (int i = 0; i < len / 2; i++) {
+		audioData[i] = ((runningSampleIndex++ / halfSqrWavePeriod) % 2) ? config->volume : -config->volume;
 	}
-	return true; // Success
+
 }
+
 
 // Handle User input
 // Chip8 Keypad 	QWERTY
@@ -343,6 +410,7 @@ void handleInput(chip8_t *chip8) {
 		}
 	}
 }
+
 
 void emulateInstruction(chip8_t *chip8, const config_t *config) {
 	// get next opcode from ram
@@ -614,10 +682,17 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 	}
 }
 
-void updateTimers(chip8_t *chip8) {
+
+void updateTimers(const SDL_AudioDeviceID dev, chip8_t *chip8) {
 	if (chip8->delay_timer > 0) chip8->delay_timer--;
-	if (chip8->sound_timer > 0) chip8->sound_timer--; // TODO: Play sound
+	if (chip8->sound_timer > 0) {
+		chip8->sound_timer--;
+		SDL_PauseAudioDevice(dev, 0); // Play sound
+	} else {
+		SDL_PauseAudioDevice(dev, 1); // Pause sound
+	}
 }
+
 
 void printDebugInfo(chip8_t *chip8) {
 	printf("Address 0x%04X, Opcode: 0x%04X Desc: ", chip8->pc-2, chip8->inst.opcode);
