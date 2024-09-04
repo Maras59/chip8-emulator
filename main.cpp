@@ -6,7 +6,8 @@
 typedef enum {
 	QUIT,
 	RUNNING,
-	PAUSE
+	PAUSE,
+	RESTART,
 } emu_state_t;
 
 // SDL Container object
@@ -57,6 +58,8 @@ typedef struct {
 	uint8_t sound_timer;	// Decrements at 60hz and plays tone when >0
 	instruction_t inst;		// currently executing instruction
 
+	bool startup;
+
 	char *romName;			// Currently running rom filepath
 
 } chip8_t;
@@ -72,61 +75,9 @@ void audioCallback(void *userdata, uint8_t *stream, int len);
 void printDebugInfo(chip8_t *chip8);
 
 int main(int argc, char **argv) {
-	// Initialize chip8
-	/*****************************************************************************************************************************/
-	chip8_t chip8 = {};
-	memset(&chip8, 0, sizeof(chip8_t));
-
-	const uint32_t entryPoint = 0x200; // Roms loaded into 0x200
-
-	// Load Font
-	const uint8_t font[] = {
-        0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0   
-        0x20, 0x60, 0x20, 0x20, 0x70,   // 1  
-        0xF0, 0x10, 0xF0, 0x80, 0xF0,   // 2 
-        0xF0, 0x10, 0xF0, 0x10, 0xF0,   // 3
-        0x90, 0x90, 0xF0, 0x10, 0x10,   // 4    
-        0xF0, 0x80, 0xF0, 0x10, 0xF0,   // 5
-        0xF0, 0x80, 0xF0, 0x90, 0xF0,   // 6
-        0xF0, 0x10, 0x20, 0x40, 0x40,   // 7
-        0xF0, 0x90, 0xF0, 0x90, 0xF0,   // 8
-        0xF0, 0x90, 0xF0, 0x10, 0xF0,   // 9
-        0xF0, 0x90, 0xF0, 0x90, 0x90,   // A
-        0xE0, 0x90, 0xE0, 0x90, 0xE0,   // B
-        0xF0, 0x80, 0x80, 0x80, 0xF0,   // C
-        0xE0, 0x90, 0x90, 0x90, 0xE0,   // D
-        0xF0, 0x80, 0xF0, 0x80, 0xF0,   // E
-        0xF0, 0x80, 0xF0, 0x80, 0x80,   // F
-    };
-	memcpy(&chip8.memory[0], font, sizeof(font));
-
-	// Load ROM
-	// TODO: Define romName
-	chip8.romName = argv[1];
-	FILE *rom = fopen(chip8.romName, "rb");
-	if (!rom) {
-		SDL_Log("Romfile %s is invalid or does not exist\n", chip8.romName);
-		return 1;
-	}
-	fseek(rom, 0, SEEK_END);		// Go to end of file
-	const size_t romSize = ftell(rom);// Get number of bytes we need read into memory
-	const size_t maxSize = sizeof chip8.memory - entryPoint;
-	rewind(rom);					// Go back to behgining of file 
-	if (romSize > maxSize) {
-		SDL_Log("Romfile %s is too big! Rom size: %zu\nMax size allowed: %zu\n", chip8.romName, romSize, maxSize);
-		return 1;
-	}
-	if (fread(&chip8.memory[entryPoint], romSize, 1, rom) != 1) {
-		SDL_Log("Could not read Rom file %s into memory\n", chip8.romName);
-		return 1;
-	}
-	fclose(rom);
-
-
-	chip8.state = RUNNING;
-	chip8.pc = entryPoint;
-	chip8.sp = 0;
-
+	chip8_t chip8 = {}; 	// Declare chip8 machine
+	bool startup = true; 	// Should the chip8 machine start itself up?
+							// Used for restart functionality
 	/*****************************************************************************************************************************/
 	// Set configs
 	config_t config = {0};
@@ -155,32 +106,89 @@ int main(int argc, char **argv) {
 	SDL_RenderClear(sdl.renderer);
 	/*------------------------------------------------------------------------------------------------*/
 
-	// Main emulator loop
-	while (chip8.state != QUIT) {
+	const uint32_t entryPoint = 0x200; // Roms loaded into 0x200
 
-		// Handle userinput
-		handleInput(&chip8);
+	// Load Font
+	const uint8_t font[] = {
+		0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0   
+		0x20, 0x60, 0x20, 0x20, 0x70,   // 1  
+		0xF0, 0x10, 0xF0, 0x80, 0xF0,   // 2 
+		0xF0, 0x10, 0xF0, 0x10, 0xF0,   // 3
+		0x90, 0x90, 0xF0, 0x10, 0x10,   // 4    
+		0xF0, 0x80, 0xF0, 0x10, 0xF0,   // 5
+		0xF0, 0x80, 0xF0, 0x90, 0xF0,   // 6
+		0xF0, 0x10, 0x20, 0x40, 0x40,   // 7
+		0xF0, 0x90, 0xF0, 0x90, 0xF0,   // 8
+		0xF0, 0x90, 0xF0, 0x10, 0xF0,   // 9
+		0xF0, 0x90, 0xF0, 0x90, 0x90,   // A
+		0xE0, 0x90, 0xE0, 0x90, 0xE0,   // B
+		0xF0, 0x80, 0x80, 0x80, 0xF0,   // C
+		0xE0, 0x90, 0x90, 0x90, 0xE0,   // D
+		0xF0, 0x80, 0xF0, 0x80, 0xF0,   // E
+		0xF0, 0x80, 0xF0, 0x80, 0x80,   // F
+	};
+	// Initialize chip8
+	while (startup) {
+
+		startup = false;
+		
+		memset(&chip8, 0, sizeof(chip8_t));
+		memcpy(&chip8.memory[0], font, sizeof(font));
+
+		// Load ROM
+		chip8.romName = argv[1];
+		FILE *rom = fopen(chip8.romName, "rb");
+		if (!rom) {
+			SDL_Log("Romfile %s is invalid or does not exist\n", chip8.romName);
+			return 1;
+		}
+		fseek(rom, 0, SEEK_END);		// Go to end of file
+		const size_t romSize = ftell(rom);// Get number of bytes we need read into memory
+		const size_t maxSize = sizeof chip8.memory - entryPoint;
+		rewind(rom);					// Go back to behgining of file 
+		if (romSize > maxSize) {
+			SDL_Log("Romfile %s is too big! Rom size: %zu\nMax size allowed: %zu\n", chip8.romName, romSize, maxSize);
+			return 1;
+		}
+		if (fread(&chip8.memory[entryPoint], romSize, 1, rom) != 1) {
+			SDL_Log("Could not read Rom file %s into memory\n", chip8.romName);
+			return 1;
+		}
+		fclose(rom);
+
+		chip8.state = RUNNING;
+		chip8.pc = entryPoint;
+		chip8.sp = 0;
+		/*****************************************************************************************************************************/
+		// Main emulator loop
+		while (chip8.state != QUIT && chip8.state != RESTART) {
+			// Handle user input
+			handleInput(&chip8);
 
 
-		// Get time() before running inst
-		const uint64_t startFrameTime = SDL_GetPerformanceCounter();
+			// Get time() before running inst
+			const uint64_t startFrameTime = SDL_GetPerformanceCounter();
 
-		for (uint32_t i = 0; i < config.instPerSec / 60; i++)
-			emulateInstruction(&chip8, &config);
+			for (uint32_t i = 0; i < config.instPerSec / 60; i++)
+				emulateInstruction(&chip8, &config);
 
-		const uint64_t endFrameTime = SDL_GetPerformanceCounter();
+			const uint64_t endFrameTime = SDL_GetPerformanceCounter();
 
-		const double timeElapsed = (double)((endFrameTime - startFrameTime) * 1000) / SDL_GetPerformanceFrequency();
-		// 60fps = 16.67
-		// 30fps = 33.34
-		// 15fps = 66.68
-		SDL_Delay(16.67f > timeElapsed ? 16.67f - timeElapsed : 0);
+			const double timeElapsed = (double)((endFrameTime - startFrameTime) * 1000) / SDL_GetPerformanceFrequency();
+			// 60fps = 16.67
+			// 30fps = 33.34
+			// 15fps = 66.68
+			SDL_Delay(16.67f > timeElapsed ? 16.67f - timeElapsed : 0);
 
-		// update window with changes on each iteration
-		updateScreen(sdl.renderer, &chip8, &config);
-		updateTimers(sdl.dev, &chip8);
+			// update window with changes on each iteration
+			updateScreen(sdl.renderer, &chip8, &config);
+			updateTimers(sdl.dev, &chip8);
+		}
+		// If restart key is pressed, this emulator loop will run again
+		if (chip8.state == RESTART) {
+			startup = true;
+		}
 	}
-
 	// Shut down SDL
 	SDL_DestroyRenderer(sdl.renderer);
 	SDL_CloseAudioDevice(sdl.dev);
@@ -377,6 +385,12 @@ void handleInput(chip8_t *chip8) {
 							printf("===== PAUSED =====\n");
 						}
 						else chip8->state = RUNNING;
+						return;
+						break;
+					
+					case SDLK_EQUALS:
+						// "=" is restart
+						chip8->state = RESTART;
 						return;
 						break;
 					
