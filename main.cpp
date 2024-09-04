@@ -15,6 +15,7 @@ typedef struct {
 	uint32_t bgColor; 		//	Backgorund Color RGBA8888
 	int32_t scaleFactor;	// 	Amount to scale chip8 pixel 
 	uint32_t instPerSec; 	// CHip8 CPU Clockrate
+	bool pixelOutlines;		// Draw pixel outlines?
 } config_t;
 
 // CHIP8 instruction format
@@ -172,8 +173,6 @@ int main(int argc, char **argv) {
 		const uint64_t endFrameTime = SDL_GetPerformanceCounter();
 
 		const double timeElapsed = (double)((endFrameTime - startFrameTime) * 1000) / SDL_GetPerformanceFrequency();
-		// printf("Time Elapsed: %f\n", timeElapsed);
-		// printf("PF: %f\n", SDL_GetPerformanceFrequency());
 		// 60fps = 16.67
 		// 30fps = 33.34
 		// 15fps = 66.68
@@ -222,6 +221,12 @@ void updateScreen(SDL_Renderer* renderer, const chip8_t *chip8, const config_t *
 			// If pixel is on, draw fg color
 			SDL_SetRenderDrawColor(renderer, fgR, fgG, fgB, fgA);
 			SDL_RenderFillRect(renderer, &rect);
+
+			if (config->pixelOutlines) {
+                // If user requested drawing pixel outlines, draw those here
+                SDL_SetRenderDrawColor(renderer, bgR, bgG, bgB, bgA);
+                SDL_RenderDrawRect(renderer, &rect);
+            }
 		} else {
 			SDL_SetRenderDrawColor(renderer, bgR, bgG, bgB, bgA);
 			SDL_RenderFillRect(renderer, &rect);
@@ -235,10 +240,11 @@ bool set_config_from_args(config_t* config, int argc, char **argv) {
 	*config = (config_t){
 		.windowWidth = 64,		// Chip8 original x resolution
 		.windowHeight = 32,		// Chip8 original y resolution
-		.fgColor = 0x000000FF,	// YELLOW
-		.bgColor = 0xFFFFFFFF,	// BLACK
+		.fgColor = 0x00FF00FF,	// GREEN
+		.bgColor = 0x000000FF,	// WHITE
 		.scaleFactor = 20,		// Resolution will be 1280x640
 		.instPerSec = 500,  	// # of instructions to emulate per second
+		.pixelOutlines = true,	// Draw pixel outlines?
 	};
 
 	// Overide from passed in args
@@ -377,7 +383,7 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 			break;
 		
 		case 0x02:
-			// 0x02NNN: call subroutine at NNN
+			// 0x2NNN: call subroutine at NNN
 			chip8->stack[chip8->sp] = chip8->pc;
 			chip8->sp++;
 			chip8->pc = chip8->inst.NNN;
