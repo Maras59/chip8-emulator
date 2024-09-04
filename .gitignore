@@ -1,4 +1,4 @@
 src/
 .vscode/
-/main.exe
-/SDL2.dll
+main.exe
+SDL2.dll
