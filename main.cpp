@@ -2,8 +2,6 @@
 #include <time.h>
 #include <SDL2/SDL.h>
 
-#define DEBUG 0
-
 typedef enum {
 	QUIT,
 	RUNNING,
@@ -57,67 +55,65 @@ void updateScreen(SDL_Renderer* renderer, const chip8_t *chip8, const config_t *
 void handleInput(chip8_t *chip8);
 void emulateInstruction(chip8_t *chip8, const config_t *config);
 void updateTimers(chip8_t *chip8);
-#ifdef DEBUG
 void printDebugInfo(chip8_t *chip8);
-#endif
 
 int main(int argc, char **argv) {
-// Initialize chip8
-/*****************************************************************************************************************************/
-/**/	chip8_t chip8 = {};
-/**/	memset(&chip8, 0, sizeof(chip8_t));
-/**/
-/**/	const uint32_t entryPoint = 0x200; // Roms loaded into 0x200
-/**/
-/**/	// Load Font
-/**/	const uint8_t font[] = {
-/**/        0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0   
-/**/        0x20, 0x60, 0x20, 0x20, 0x70,   // 1  
-/**/        0xF0, 0x10, 0xF0, 0x80, 0xF0,   // 2 
-/**/        0xF0, 0x10, 0xF0, 0x10, 0xF0,   // 3
-/**/        0x90, 0x90, 0xF0, 0x10, 0x10,   // 4    
-/**/        0xF0, 0x80, 0xF0, 0x10, 0xF0,   // 5
-/**/        0xF0, 0x80, 0xF0, 0x90, 0xF0,   // 6
-/**/        0xF0, 0x10, 0x20, 0x40, 0x40,   // 7
-/**/        0xF0, 0x90, 0xF0, 0x90, 0xF0,   // 8
-/**/        0xF0, 0x90, 0xF0, 0x10, 0xF0,   // 9
-/**/        0xF0, 0x90, 0xF0, 0x90, 0x90,   // A
-/**/        0xE0, 0x90, 0xE0, 0x90, 0xE0,   // B
-/**/        0xF0, 0x80, 0x80, 0x80, 0xF0,   // C
-/**/        0xE0, 0x90, 0x90, 0x90, 0xE0,   // D
-/**/        0xF0, 0x80, 0xF0, 0x80, 0xF0,   // E
-/**/        0xF0, 0x80, 0xF0, 0x80, 0x80,   // F
-/**/    };
-/**/	memcpy(&chip8.memory[0], font, sizeof(font));
-/**/
-/**/	// Load ROM
-/**/	// TODO: Define romName
-/**/	chip8.romName = argv[1];
-/**/	FILE *rom = fopen(chip8.romName, "rb");
-/**/	if (!rom) {
-/**/		SDL_Log("Romfile %s is invalid or does not exist\n", chip8.romName);
-/**/		return 1;
-/**/	}
-/**/	fseek(rom, 0, SEEK_END);		// Go to end of file
-/**/	const size_t romSize = ftell(rom);// Get number of bytes we need read into memory
-/**/	const size_t maxSize = sizeof chip8.memory - entryPoint;
-/**/	rewind(rom);					// Go back to behgining of file 
-/**/	if (romSize > maxSize) {
-/**/		SDL_Log("Romfile %s is too big! Rom size: %zu\nMax size allowed: %zu\n", chip8.romName, romSize, maxSize);
-/**/		return 1;
-/**/	}
-/**/	if (fread(&chip8.memory[entryPoint], romSize, 1, rom) != 1) {
-/**/		SDL_Log("Could not read Rom file %s into memory\n", chip8.romName);
-/**/		return 1;
-/**/	}
-/**/	fclose(rom);
-/**/
-/**/
-/**/	chip8.state = RUNNING;
-/**/	chip8.pc = entryPoint;
-/**/	chip8.sp = 0;
-/**/
-/*****************************************************************************************************************************/
+	// Initialize chip8
+	/*****************************************************************************************************************************/
+	chip8_t chip8 = {};
+	memset(&chip8, 0, sizeof(chip8_t));
+
+	const uint32_t entryPoint = 0x200; // Roms loaded into 0x200
+
+	// Load Font
+	const uint8_t font[] = {
+        0xF0, 0x90, 0x90, 0x90, 0xF0,   // 0   
+        0x20, 0x60, 0x20, 0x20, 0x70,   // 1  
+        0xF0, 0x10, 0xF0, 0x80, 0xF0,   // 2 
+        0xF0, 0x10, 0xF0, 0x10, 0xF0,   // 3
+        0x90, 0x90, 0xF0, 0x10, 0x10,   // 4    
+        0xF0, 0x80, 0xF0, 0x10, 0xF0,   // 5
+        0xF0, 0x80, 0xF0, 0x90, 0xF0,   // 6
+        0xF0, 0x10, 0x20, 0x40, 0x40,   // 7
+        0xF0, 0x90, 0xF0, 0x90, 0xF0,   // 8
+        0xF0, 0x90, 0xF0, 0x10, 0xF0,   // 9
+        0xF0, 0x90, 0xF0, 0x90, 0x90,   // A
+        0xE0, 0x90, 0xE0, 0x90, 0xE0,   // B
+        0xF0, 0x80, 0x80, 0x80, 0xF0,   // C
+        0xE0, 0x90, 0x90, 0x90, 0xE0,   // D
+        0xF0, 0x80, 0xF0, 0x80, 0xF0,   // E
+        0xF0, 0x80, 0xF0, 0x80, 0x80,   // F
+    };
+	memcpy(&chip8.memory[0], font, sizeof(font));
+
+	// Load ROM
+	// TODO: Define romName
+	chip8.romName = argv[1];
+	FILE *rom = fopen(chip8.romName, "rb");
+	if (!rom) {
+		SDL_Log("Romfile %s is invalid or does not exist\n", chip8.romName);
+		return 1;
+	}
+	fseek(rom, 0, SEEK_END);		// Go to end of file
+	const size_t romSize = ftell(rom);// Get number of bytes we need read into memory
+	const size_t maxSize = sizeof chip8.memory - entryPoint;
+	rewind(rom);					// Go back to behgining of file 
+	if (romSize > maxSize) {
+		SDL_Log("Romfile %s is too big! Rom size: %zu\nMax size allowed: %zu\n", chip8.romName, romSize, maxSize);
+		return 1;
+	}
+	if (fread(&chip8.memory[entryPoint], romSize, 1, rom) != 1) {
+		SDL_Log("Could not read Rom file %s into memory\n", chip8.romName);
+		return 1;
+	}
+	fclose(rom);
+
+
+	chip8.state = RUNNING;
+	chip8.pc = entryPoint;
+	chip8.sp = 0;
+
+	/*****************************************************************************************************************************/
 	// Set configs
 	config_t config;
 	if (!set_config_from_args(&config, argc, argv)) exit(EXIT_FAILURE);
@@ -129,8 +125,8 @@ int main(int argc, char **argv) {
 	srand(time(NULL));
 		
 
-// Setup SDL
-/*------------------------------------------------------------------------------------------------*/
+	// Setup SDL
+	/*------------------------------------------------------------------------------------------------*/
 	if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
 		SDL_Log("Unable to initialize SDL: %s\n", SDL_GetError());
 		return 1;
@@ -158,7 +154,7 @@ int main(int argc, char **argv) {
 
 	SDL_SetRenderDrawColor(renderer, r,g,b,a);
 	SDL_RenderClear(renderer);
-/*------------------------------------------------------------------------------------------------*/
+	/*------------------------------------------------------------------------------------------------*/
 
 	// Main emulator loop
 	while (chip8.state != QUIT) {
@@ -356,7 +352,7 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 		chip8->inst.Y = (chip8->inst.opcode >> 4) & 0x0F;
 
 	#ifdef DEBUG
-		// printDebugInfo(chip8);
+		printDebugInfo(chip8);
 	#endif
 
 		// Emulate opcode
@@ -616,7 +612,7 @@ void updateTimers(chip8_t *chip8) {
 	if (chip8->delay_timer > 0) chip8->delay_timer--;
 	if (chip8->sound_timer > 0) chip8->sound_timer--; // TODO: Play sound
 }
-#ifdef DEBUG
+
 void printDebugInfo(chip8_t *chip8) {
 	printf("Address 0x%04X, Opcode: 0x%04X Desc: ", chip8->pc-2, chip8->inst.opcode);
 	switch ((chip8->inst.opcode >> 12) & 0x0F)
@@ -825,10 +821,8 @@ void printDebugInfo(chip8_t *chip8) {
 		}
 		break;
 
-
 	default:
 		printf("Uninplemented or invalid opcode\n");
 		break;
 	}
 }
-#endif
