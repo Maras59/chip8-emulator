@@ -406,7 +406,7 @@ void handleInput(chip8_t *chip8) {
 
 					case SDLK_a: chip8->keys[0x7] = true; break;
 					case SDLK_s: chip8->keys[0x8] = true; break;
-					case SDLK_d: chip8->keys[0x8] = true; break;
+					case SDLK_d: chip8->keys[0x9] = true; break;
 					case SDLK_f: chip8->keys[0xE] = true; break;
 
 					case SDLK_z: chip8->keys[0xA] = true; break;
