@@ -427,6 +427,8 @@ void handleInput(chip8_t *chip8) {
 
 
 void emulateInstruction(chip8_t *chip8, const config_t *config) {
+	bool carry;   // Save carry flag/VF value for some instructions
+
 	// get next opcode from ram
 	if (chip8->state != PAUSE) {
 		chip8->inst.opcode = (chip8->memory[chip8->pc] << 8) | chip8->memory[chip8->pc+1];
@@ -521,31 +523,40 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 					break;
 				case 4:
 					// 0x8XY4: Set register VX += VY, set VF to 1 if carry
-					if ((uint16_t)(chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y]) > 255)
-						chip8->V[0xF] = 1;
-					chip8->V[chip8->inst.X] += chip8->V[chip8->inst.Y];
+					carry = ((uint16_t)(chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y]) > 255);
+
+                    chip8->V[chip8->inst.X] += chip8->V[chip8->inst.Y];
+                    chip8->V[0xF] = carry; 
 					break;
 				case 5:
 					// 0x8XY5: Set register VX -= VY, set VF to 1 if there is not a borrow (result is positive)
 					// if (chip8->V[chip8->inst.X] >= chip8->V[chip8->inst.Y])
 					// 	chip8->V[0xF] = 1;
-					chip8->V[0xF] = chip8->V[chip8->inst.X] >= chip8->V[chip8->inst.Y];
+					carry = chip8->V[chip8->inst.X] >= chip8->V[chip8->inst.Y];
+
 					chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
+					chip8->V[0xF] = carry; 
 					break;
 				case 6:
 					// 0x8XY6: Set register VX >>= 1, Store shifted off bit in VF
-					chip8->V[0xF] = ((chip8->V[chip8->inst.X] & 1) << 7) >> 7;
+					carry = ((chip8->V[chip8->inst.X] & 1) << 7) >> 7;
 					chip8->V[chip8->inst.X] >>= 1;
+
+					chip8->V[0xF] = carry; 
 					break;
 				case 7:
 					// 0x8XY7: Set register VX = VY - VX, set VF to 1 if there is not a borrow (result is positive)
-					chip8->V[0xF] = chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y];
+					carry = chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y];
+
 					chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
+					chip8->V[0xF] = carry;
 					break;
 				case 0xE:
-					// 0x8XY6: Set register VX <<= 1, Store shifted off bit in VF
-					chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80) >> 7;
+					// 0x8XYE: Set register VX <<= 1, Store shifted off bit in VF
+					carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
 					chip8->V[chip8->inst.X] <<= 1;
+
+					chip8->V[0xF] = carry;
 					break;
 				default:
 				 	// Wong/unimplemeted
