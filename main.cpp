@@ -512,14 +512,17 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 				case 1:
 					// 0x8XY1: Set register VX |= VY
 					chip8->V[chip8->inst.X] |= chip8->V[chip8->inst.Y];
+					chip8->V[0xF] = 0; // CHIP8 Quirk (NO SCHIP)
 					break;
 				case 2:
 					// 0x8XY2: Set register VX &= VY
 					chip8->V[chip8->inst.X] &= chip8->V[chip8->inst.Y];
+					chip8->V[0xF] = 0; // CHIP8 Quirk (NO SCHIP)
 					break;
 				case 3:
 					// 0x8XY3: Set register VX ^= VY
 					chip8->V[chip8->inst.X] ^= chip8->V[chip8->inst.Y];
+					chip8->V[0xF] = 0; // CHIP8 Quirk (NO SCHIP)
 					break;
 				case 4:
 					// 0x8XY4: Set register VX += VY, set VF to 1 if carry
@@ -539,8 +542,9 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 					break;
 				case 6:
 					// 0x8XY6: Set register VX >>= 1, Store shifted off bit in VF
-					carry = ((chip8->V[chip8->inst.X] & 1) << 7) >> 7;
-					chip8->V[chip8->inst.X] >>= 1;
+					// NOTE: Using VY is a Chip8 quirk (NOT SCHIP)
+					carry = ((chip8->V[chip8->inst.Y] & 1) << 7) >> 7;
+					chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] >> 1;
 
 					chip8->V[0xF] = carry; 
 					break;
@@ -553,8 +557,8 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 					break;
 				case 0xE:
 					// 0x8XYE: Set register VX <<= 1, Store shifted off bit in VF
-					carry = (chip8->V[chip8->inst.X] & 0x80) >> 7;
-					chip8->V[chip8->inst.X] <<= 1;
+					carry = (chip8->V[chip8->inst.Y] & 0x80) >> 7;
+					chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] << 1;
 
 					chip8->V[0xF] = carry;
 					break;
@@ -637,17 +641,30 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 		case 0x0F:
 			switch(chip8->inst.NN) {
 				case 0x0A: {
-					// 0xFX0A: VX = get_key, wait until key pressed and store in VX
-					bool anyKeyPressed = false;
-					for (uint8_t i = 0; i < sizeof chip8->keys; i++) {
-						if (chip8->keys[i]) {
-							chip8->V[chip8->inst.X];
-							break;
-						}
-					}
-					// Keep getting current opcode and running this inst if no key pressed
-					if (!anyKeyPressed) chip8->pc -= 2;
-					break;
+					// 0xFX0A: VX = get_key(); Await until a keypress, and store in VX
+                    static bool anyKeyPressed = false;
+                    static uint8_t key = 0xFF;
+
+                    for (uint8_t i = 0; key == 0xFF && i < sizeof chip8->keys; i++) 
+                        if (chip8->keys[i]) {
+                            key = i;    // Save pressed key to check until it is released
+                            anyKeyPressed = true;
+                            break;
+                        }
+
+                    // If no key has been pressed yet, keep getting the current opcode & running this instruction
+                    if (!anyKeyPressed) chip8->pc -= 2; 
+                    else {
+                        // A key has been pressed, also wait until it is released to set the key in VX
+                        if (chip8->keys[key])     // "Busy loop" CHIP8 emulation until key is released
+                            chip8->pc -= 2;
+                        else {
+                            chip8->V[chip8->inst.X] = key;     	// VX = key 
+                            key = 0xFF;                        	// Reset key to not found 
+                            anyKeyPressed = false;           	// Reset to nothing pressed yet
+                        }
+                    }
+                    break;
 				}
 				
 				case 0x1E:
@@ -688,14 +705,18 @@ void emulateInstruction(chip8_t *chip8, const config_t *config) {
 				}
 				case 0x55:
 					// 0xFX55: Register dump V0-VX inclusive to memory offset from I, CHIP8 increments I, SCHIP DOES NOT
-					for (uint8_t i = 0; i <= chip8->inst.X; i++)
-						chip8->memory[chip8->I + i] = chip8->V[i];
+					for (uint8_t i = 0; i <= chip8->inst.X; i++) {
+						chip8->memory[chip8->I] = chip8->V[i];
+						chip8->I++; // CHIP8 Quirk (NO SCHIP)
+					}
 					break;
 
 				case 0x65:
 					// 0xFX65: Register load V0-VX inclusive to memory offset from I, CHIP8 increments I
-					for (uint8_t i = 0; i<= chip8->inst.X; i++)
-						chip8->V[i] = chip8->memory[chip8->I + i];
+					for (uint8_t i = 0; i<= chip8->inst.X; i++) {
+						chip8->V[i] = chip8->memory[chip8->I];
+						chip8->I++; // CHIP8 Quirk (NO SCHIP)
+					}
 					break;
 				default:
 					break;
