@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
 			updateScreen(sdl.renderer, &chip8, &config);
 			updateTimers(sdl.dev, &chip8);
 		}
-		// If restart key is pressed, this emulator loop will run again
+		// If the restart key is pressed, the main emulator loop is ended and the the chip-8 startup proccess will be looped through again
 		if (chip8.state == RESTART) {
 			startup = true;
 		}

@@ -14,7 +14,7 @@ Ensure that you have the `SDL.dll` file in the project directory and that the SD
 You can run a rom from the command line with the command `$ .\main.exe '.\roms\[ROM NAME].ch8'`. The keyboard mapping is shown below:<br>
 | CHIP8 Keypad                                                              | QWERTY Mapping                                                                                                           |
 |---------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
-| 1 2 3 C<br>4 5 6 D<br>7 8 9 E<br>A 0 B F<br>-------<br>-------<br>------- | 1 2 3 4<br>Q W E R<br>A S D F<br>Z X C V<br>Restart Rom: Equals key<br>Pause Emulator: Spacebar<br>Quit Emulator: Escape |
+| 1 2 3 C<br>4 5 6 D<br>7 8 9 E<br>A 0 B F<br>-------<br>-------<br>------- | 1 2 3 4<br>Q W E R<br>A S D F<br>Z X C V<br>Restart: Equals key<br>Pause: Spacebar<br>Quit: Escape |
 
 ## Notes
 
